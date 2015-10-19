@@ -5,3 +5,13 @@
  *
  *Description:	
  *********************************************************************************/
+
+
+/*
+ * Global Varialbes
+ */
+// Microchip 24FC256 EEPROM consists of 512 64-byte pages
+#define PAGE_SIZE 64
+#define MAX_ARRAY_ADDR 511
+
+
