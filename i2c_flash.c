@@ -121,20 +121,20 @@ loff_t i2c_seek(struct file *filp, loff_t offset, int whence){
 				fdev_ptr->ppos = offset;
 				return fdev_ptr->ppos;
 			}
-			return -1; //Looks like EOVERFLOW is depricated
+			return EOVERFLOW;
 		case SEEK_CUR:
 			if(((offset + fdev_ptr->ppos) < NUM_PAGES) &&
 					((offset + fdev_ptr->ppos) >= 0)){
 				fdev_ptr->ppos += offset;
 				return fdev_ptr->ppos;
 			}
-			return -1;
+			return EOVERFLOW;
 		case SEEK_END:
 			if((offset > ~NUM_PAGES) && (offset <= 0)){
 				fdev_ptr->ppos = NUM_PAGES - 1 + offset;
 				return fdev_ptr->ppos;
 			}
-			return -1;
+			return EOVERFLOW;
 		default:
 			return EINVAL;
 	}
