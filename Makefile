@@ -11,7 +11,7 @@ obj-m:= i2c_flash.o
 
 all:
 	make ARCH=x86 CROSS_COMPILE=i586-poky-linux- -C $(KDIR) M=$(PWD) modules
-	i586-poky-linux-gcc -o $(APP) main_2.h main_2.c --sysroot=$(SROOT)
+	i586-poky-linux-gcc -o $(APP) global.h main_2.c --sysroot=$(SROOT)
 
 clean:
 	rm -f *.ko
