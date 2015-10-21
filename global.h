@@ -27,7 +27,7 @@
  * We cannot rely on dynamic allocation of our major number, because the user
  * space program needs to be able to know what this is.
  */
-#define MAJOR_NUM 100
+#define MAJOR_NUM 88
 
 /*
  * Let's define some i2c functions

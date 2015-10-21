@@ -261,7 +261,7 @@ int __init i2c_init(void){
 	 */
 	fdev_ptr = NULL; //For error checking later on in the function
 
-	if(alloc_chrdev_region((dev_t *)MAJOR_NUM, 0, 1, DEVICE_NAME) < 0){
+	if(register_chrdev_region(MKDEV(MAJOR_NUM, 0), 1, DEVICE_NAME) < 0){
 		printk(KERN_ERR "Can't register device!\n"); 
 		return -1;
 	}

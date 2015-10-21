@@ -76,7 +76,7 @@ int main(){
 
 	fd = open("/dev/i2c_flash", O_RDWR);
 	if(fd < 0){
-		printf("Can't open i2c_flash device!\n");
+		perror("Can't open i2c_flash device");
 		return -1;
 	}
 
