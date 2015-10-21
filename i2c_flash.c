@@ -5,13 +5,13 @@
  *
  *Description:	
  ******************************************************************************************************/
+#include "global.h"
 #include "i2c_flash.h"
 
 /*
  * Global variables
  */
 struct fdev *fdev_ptr;
-static dev_t fdev_num;
 struct class *fclass;
 static struct device *fdev;
 
@@ -24,64 +24,6 @@ char *vEEPROM;
 /*
  * Functions
  */
-//Workqueue functions
-void wq_read(struct work_struct *pwork){
-	int i;
-	char addr[3];
-	wq_t *tmpwork = (wq_t *) pwork;
-
-	//While we are communicating with the device, turn the LED on
-	gpio_set_value_cansleep(26, 1);
-	fdev_ptr = tmpwork->filp->private_data;
-
-	for(i = 0; i < tmpwork->npages; i++){
-		sprintf(addr, "%x", fdev_ptr->ppos);
-
-		//Need to send memory address
-		if(i2c_master_send(fdev_ptr->client, addr, 3) < 0)
-			printk(KERN_ERR "Unable to send memory address to EEPROM!\n");
-
-		if(i2c_master_recv(fdev_ptr->client, &vEEPROM[fdev_ptr->ppos], PG_SIZE) < 0)
-			printk(KERN_ERR "Unable to read data from EEPROM!\n");
-
-		fdev_ptr->ppos++;
-	}
-
-	//Turn off LED, and set our global variable state to OK
-	gpio_set_value_cansleep(26, 0);
-	g_state = 0;
-}
-
-void wq_write(struct work_struct *pwork){
-	int i;
-	char addr[3];
-	wq_t *tmpwork = (wq_t *) pwork;
-
-	//While we are communicating with the device, turn the LED on
-	gpio_set_value_cansleep(26, 1);
-	fdev_ptr = tmpwork->filp->private_data;
-
-	for(i = 0; i < tmpwork->npages; i++){
-		sprintf(addr, "%x", fdev_ptr->ppos);
-
-		//Need to send memory address
-		if(i2c_master_send(fdev_ptr->client, addr, 3) < 0)
-			printk(KERN_ERR "Unable to send memory address to EEPROM!\n");
-
-		if(i2c_master_send(fdev_ptr->client, tmpwork->wbuf, PG_SIZE) < 0)
-			printk(KERN_ERR "Unable to read data from EEPROM!\n");
-
-		//We also need to show this data is written in our virtual EEPROM
-		strcpy(&vEEPROM[fdev_ptr->ppos], tmpwork->wbuf);
-
-		fdev_ptr->ppos++;
-	}
-
-	//Turn off LED, and set our global variable state to OK
-	gpio_set_value_cansleep(26, 0);
-	g_state = 0;
-}
-
 //FOPS functions
 /*******************************************************************************************************
  * As a reminder, the file operations structure looks like this:
@@ -113,7 +55,7 @@ void wq_write(struct work_struct *pwork){
  ******************************************************************************************************/
 loff_t i2c_seek(struct file *filp, loff_t offset, int whence){
 	if(fdev_ptr != filp->private_data)
-		return EBADF;
+		return -EBADF;
 
 	switch(whence){
 		case SEEK_SET:
@@ -121,22 +63,22 @@ loff_t i2c_seek(struct file *filp, loff_t offset, int whence){
 				fdev_ptr->ppos = offset;
 				return fdev_ptr->ppos;
 			}
-			return EOVERFLOW;
+			return -EOVERFLOW;
 		case SEEK_CUR:
 			if(((offset + fdev_ptr->ppos) < NUM_PAGES) &&
 					((offset + fdev_ptr->ppos) >= 0)){
 				fdev_ptr->ppos += offset;
 				return fdev_ptr->ppos;
 			}
-			return EOVERFLOW;
+			return -EOVERFLOW;
 		case SEEK_END:
 			if((offset > ~NUM_PAGES) && (offset <= 0)){
 				fdev_ptr->ppos = NUM_PAGES - 1 + offset;
 				return fdev_ptr->ppos;
 			}
-			return EOVERFLOW;
+			return -EOVERFLOW;
 		default:
-			return EINVAL;
+			return -EINVAL;
 	}
 }
 
@@ -148,8 +90,10 @@ ssize_t i2c_read(struct file *filp, char *buf, size_t count, loff_t *ppos){
 	switch(g_state){
 		//Pseudo FSM
 		case 0:
-			for(i = 0; i < count; i++)
+			for(i = 0; i < count; i++){
 				sprintf(tmpbuf, &vEEPROM[fdev_ptr->ppos], PG_SIZE);
+				fdev_ptr->ppos++;
+			}
 
 			if(copy_to_user(buf, tmpbuf, count))
 				printk(KERN_WARNING "Data lost when writing to user!\n");
@@ -195,11 +139,32 @@ ssize_t i2c_write(struct file *filp, const char *buf, size_t count, loff_t *ppos
 }
 
 int i2c_ioctl_dep(struct inode *node, struct file *filp, unsigned int nioctl, unsigned long param){
-	return 0;
+	loff_t *tmppos = (loff_t *) &(fdev_ptr->ppos);
+	printk(KERN_WARNING "Using depricated ioctl function!");
+	fdev_ptr = container_of(node->i_cdev, struct fdev, fcdev);
+	filp->private_data = fdev_ptr;
+
+	switch(nioctl){
+		case IOCTL_READ:
+			return i2c_read(filp, (char *)param, PG_SIZE, tmppos);
+		case IOCTL_WRITE:
+			return i2c_write(filp, (char *)param, PG_SIZE, tmppos);
+		default:
+			return -EINVAL;
+	}
 }
 
 long i2c_ioctl(struct file *filp, unsigned int cmd, unsigned long arg){
-	return 0;
+	loff_t *tmppos = (loff_t *) &(fdev_ptr->ppos);
+
+	switch(cmd){
+		case IOCTL_READ:
+			return i2c_read(filp, (char *)arg, PG_SIZE, tmppos);
+		case IOCTL_WRITE:
+			return i2c_write(filp, (char *)arg, PG_SIZE, tmppos);
+		default:
+			return -EINVAL;
+	}
 }
 
 int i2c_open(struct inode *node, struct file *filp){
@@ -227,6 +192,64 @@ struct file_operations flash_fops = {
 	.release = i2c_release
 };
 
+//Workqueue functions
+void wq_read(struct work_struct *pwork){
+	int i;
+	char addr[3];
+
+	wq_t *tmpwork = (wq_t *) pwork;
+
+	//While we are communicating with the device, turn the LED on
+	gpio_set_value_cansleep(26, 1);
+
+	for(i = 0; i < tmpwork->npages; i++){
+		sprintf(addr, "%x", fdev_ptr->ppos);
+
+		//Need to send memory address
+		if(i2c_master_send(fdev_ptr->client, addr, 3) < 0)
+			printk(KERN_ERR "Unable to send memory address to EEPROM!\n");
+
+		if(i2c_master_recv(fdev_ptr->client, &vEEPROM[fdev_ptr->ppos], PG_SIZE) < 0)
+			printk(KERN_ERR "Unable to read data from EEPROM!\n");
+
+		fdev_ptr->ppos++;
+	}
+
+	//Turn off LED, and set our global variable state to OK
+	gpio_set_value_cansleep(26, 0);
+	g_state = 0;
+}
+
+void wq_write(struct work_struct *pwork){
+	int i;
+	char addr[3];
+
+	wq_t *tmpwork = (wq_t *) pwork;
+
+	//While we are communicating with the device, turn the LED on
+	gpio_set_value_cansleep(26, 1);
+
+	for(i = 0; i < tmpwork->npages; i++){
+		sprintf(addr, "%x", fdev_ptr->ppos);
+
+		//Need to send memory address
+		if(i2c_master_send(fdev_ptr->client, addr, 3) < 0)
+			printk(KERN_ERR "Unable to send memory address to EEPROM!\n");
+
+		if(i2c_master_send(fdev_ptr->client, tmpwork->wbuf, PG_SIZE) < 0)
+			printk(KERN_ERR "Unable to read data from EEPROM!\n");
+
+		//We also need to show this data is written in our virtual EEPROM
+		strcpy(&vEEPROM[fdev_ptr->ppos], tmpwork->wbuf);
+
+		fdev_ptr->ppos++;
+	}
+
+	//Turn off LED, and set our global variable state to OK
+	gpio_set_value_cansleep(26, 0);
+	g_state = 0;
+}
+
 //init and exit functions
 int __init i2c_init(void){
 	//Set up our global variables
@@ -238,7 +261,7 @@ int __init i2c_init(void){
 	 */
 	fdev_ptr = NULL; //For error checking later on in the function
 
-	if(alloc_chrdev_region(&fdev_num, 0, 1, DEVICE_NAME) < 0){
+	if(alloc_chrdev_region((dev_t *)MAJOR_NUM, 0, 1, DEVICE_NAME) < 0){
 		printk(KERN_ERR "Can't register device!\n"); 
 		return -1;
 	}
@@ -253,7 +276,7 @@ int __init i2c_init(void){
 
 	cdev_init(&fdev_ptr->fcdev, &flash_fops);
 	fdev_ptr->fcdev.owner = THIS_MODULE;
-	if(cdev_add(&fdev_ptr->fcdev, fdev_num, 1) < 0){
+	if(cdev_add(&fdev_ptr->fcdev, MAJOR_NUM, 1) < 0){
 		printk(KERN_ERR "Can't add device!\n");
 		if(fdev_ptr == NULL)
 			kfree(fdev_ptr);
@@ -262,7 +285,7 @@ int __init i2c_init(void){
 
 	fdev_ptr->ppos = 0;
 
-	fdev = device_create(fclass, NULL, MKDEV(fdev_num, 0), NULL, DEVICE_NAME);
+	fdev = device_create(fclass, NULL, MKDEV(MAJOR_NUM, 0), NULL, DEVICE_NAME);
 	
 	/*
 	 * Now we get to some fun, project related stuff!
@@ -318,9 +341,9 @@ void __exit i2c_exit(void){
 	i2c_put_adapter(fdev_ptr->adapter);
 	kfree(fdev_ptr->client);
 
-	unregister_chrdev_region(fdev_num, 1);
+	unregister_chrdev_region(MAJOR_NUM, 1);
 
-	device_destroy(fclass, MKDEV(fdev_num, 0));
+	device_destroy(fclass, MKDEV(MAJOR_NUM, 0));
 	cdev_del(&fdev_ptr->fcdev);
 	kfree(fdev_ptr);
 	
