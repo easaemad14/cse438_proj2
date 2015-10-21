@@ -9,59 +9,83 @@
 		the instruction pdf.
  *********************************************************************************/
 #include <stdio.h>
+#include <string.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
 #include "global.h"
 
-int main(){
-	int fd, ret, i;
+/*
+ * IOCTL Functions called from main()
+ */
+ioctl_erase_EEPROM(int fild){
+	int i, ret;
 	char buff[PG_SIZE];
-	memset(buff, 0, PG_SIZE);
+	flush_buffer(buff, PG_SIZE);
 
-	fd = open("/dev/%s", DEVICE_NAME);
-	if(fd < 0){
-		printf("Can't open device: %s!\n", DEVICE_NAME);
-		return -1;
-	}
-
-	//First thing I want to do is write all zeros to the EEPROM
-	for(i = 0; i < NUM_PAGES;){
-		ret = write(fd, buff, sizeof(buff));
+	for(i = 0; i < NUM_PAGES; ){
+		ret = ioctl(fild, IOCTL_WRITE, buff);
 
 		if(!ret)
 			i++;
 		else{
 			printf("Unable to write from userspace!\n");
-			pritnf("Trying again in one usecond.\n");
+			printf("Trying again in one usecond.\n");
 			sleep(1);
 		}
 	}
+}
 
-	//Next, let's write "London" horizontally and vertically
-	ret = lseek(fd, 0, SEEK_SET); //Go back to the first line
+ioctl_write_london(int fild){
+	//Throw some works on my queue
+	//No need to change file position, it is automated in the reading and writing process
+	if(ioctl(fild, IOCTL_WRITE, "London") < 0)
+		printf("Unable to write \"London\" from userspace!");
+	if(ioctl(fild, IOCTL_WRITE, "o") < 0)
+		printf("Unable to write 'o' from userspace!");
+	if(ioctl(fild, IOCTL_WRITE, "n") < 0)
+		printf("Unable to write 'n' from userspace!");
+	if(ioctl(fild, IOCTL_WRITE, "d") < 0)
+		printf("Unable to write 'd' from userspace!");
+	if(ioctl(fild, IOCTL_WRITE, "o") < 0)
+		printf("Unable to write 'o' from userspace!");
+	if(ioctl(fild, IOCTL_WRITE, "n") < 0)
+		printf("Unable to write 'n' from userspace!");
+}
 
-	ret = write(fd, "London", 6);
-	ret = write(fd, "o", 1);
-	ret = write(fd, "n", 1);
-	ret = write(fd, "d", 1);
-	ret = write(fd, "o", 1);
-	ret = write(fd, "n", 1);
+ioctl_read_london(int fild, int npg){
+	int i, ret;
+	char buff[PG_SIZE];
 
-	//Now let's read our beautiful map (six pages)
-	ret = lseek(fd, 0, SEEK_SET);
-	ret = read(fd, buff, 6);
-	buff[6] = '\0'; //So we don't overflow
-	printf("%s\n", buff);
+	for(i = 0; i < npg; i++){
+		ret = ioctl(fild, IOCTL_READ, &buff);
 
-	memset(buff, '\0', sizeof(buff));
-	ret = read(fd, buff, 1); //o
-	printf("%c\n", buff[0]);
-	ret = read(fd, buff, 1); //n
-	printf("%c\n", buff[0]);
-	ret = read(fd, buff, 1); //d
-	printf("%c\n", buff[0]);
-	ret = read(fd, buff, 1); //o
-	printf("%c\n", buff[0]);
-	ret = read(fd, buff, 1); //n
-	printf("%c\n", buff[0]);
+		if(!ret){
+			printf("%s\n", buff);
+			i++;
+		}
+		else{
+			printf("Unable to read from kernel space!\n");
+			printf("Trying again in one usecond.\n");
+			sleep(1);
+		}
+	}
+}
+
+int main(){
+	int fd;
+
+	fd = open("/dev/i2c_flash", O_RDWR);
+	if(fd < 0){
+		printf("Can't open i2c_flash device!\n");
+		return -1;
+	}
+
+	//Test my program with ioctl functions
+	ioctl_erase_EEPROM(fd);
+	if(lseek(fd, 0, SEEK_SET) < 0)
+		printf("ERROR at lseek in main!\n");
+	ioctl_write_london(fd);
+	ioctl_read_london(fd, 6);
 
 	return 0;
 }

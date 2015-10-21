@@ -12,18 +12,27 @@
 #include <linux/ioctl.h>
 
 /*
+ * No project is complete without macros!
+ */
+#define flush_buffer(B, S) memset(B, '\0', S)
+
+/*
  * Global Varialbes
  */
-#define DEVICE_NAME "i2c_flash"
 #define PG_SIZE 64
 #define NUM_PAGES 512
-extern int MAJOR_NUM;
+
+/*
+ * VERY IMPORTANT:
+ * We cannot rely on dynamic allocation of our major number, because the user
+ * space program needs to be able to know what this is.
+ */
+#define MAJOR_NUM 100
 
 /*
  * Let's define some i2c functions
  */
-#define IOCTL_RW_SIZE _IOR(MAJOR_NUM, 0, int npgs)
-#define IOCTL_READ _IOWR(MAJOR_NUM, 1, int start_pos)
-#define IOCTL_WRITE _IOWR(MAJOR_NUM, 2, char *buffer)
+#define IOCTL_READ _IOWR(MAJOR_NUM, 0, char *)
+#define IOCTL_WRITE _IOWR(MAJOR_NUM, 1, char *)
 
 #endif //__GLOBAL_H_
